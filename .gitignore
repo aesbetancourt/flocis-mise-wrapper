@@ -1,0 +1,15 @@
+# Upstream clone — recreated by `mise run install`
+floci-ui/
+
+# Emulator state
+floci-lab/data/
+
+# OpenTofu
+floci-lab/.terraform/
+floci-lab/*.tfstate
+floci-lab/*.tfstate.*
+floci-lab/crash.log
+
+# Local overrides
+.env.local
+.DS_Store

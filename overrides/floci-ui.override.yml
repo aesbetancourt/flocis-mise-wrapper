@@ -1,0 +1,4 @@
+networks:
+  floci_default:
+    name: floci-net
+    external: true

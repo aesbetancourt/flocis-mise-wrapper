@@ -1,0 +1,151 @@
+# ~/floci/mise.toml
+# Local AWS lab: Floci emulator + Floci UI console + OpenTofu.
+# Run `mise tasks` to list everything.
+
+[env]
+# Pinned image and repo refs
+_.file = "{{config_root}}/versions.env"
+
+# Isolate the lab from ~/.aws — these paths are never your real credentials
+AWS_CONFIG_FILE = "{{config_root}}/floci-lab/aws/config"
+AWS_SHARED_CREDENTIALS_FILE = "{{config_root}}/floci-lab/aws/credentials"
+AWS_PROFILE = "default"
+
+[tools]
+# Remove this block if you manage these elsewhere, to avoid a second install.
+opentofu = "1.9.0"
+awscli = "2.24.0"
+
+
+# ─── Lifecycle ────────────────────────────────────────────────────────────────
+
+[tasks.install]
+description = "Set up the lab from a fresh clone. Run once."
+dir = "{{config_root}}"
+run = '''
+set -e
+
+# 1. Upstream console, pinned to FLOCI_UI_REF
+if [ ! -d floci-ui ]; then
+  git clone https://github.com/floci-io/floci-ui.git
+fi
+git -C floci-ui fetch --tags --quiet
+git -C floci-ui checkout --quiet "$FLOCI_UI_REF"
+
+# 2. Our override — lives in the repo, copied into the ignored clone
+cp overrides/floci-ui.override.yml floci-ui/docker-compose.override.yml
+
+# 3. Network and directories
+docker network inspect floci-net >/dev/null 2>&1 || docker network create floci-net
+mkdir -p floci-lab/data
+
+# 4. Images and OpenTofu
+docker compose -f floci-lab/docker-compose.yml pull
+docker compose -f floci-ui/docker-compose.yml pull floci-api floci-ui
+(cd floci-lab && tofu init -upgrade)
+
+echo ""
+echo "Install complete. Run: mise run up"
+'''
+
+[tasks.net]
+description = "Create the shared Docker network if it is missing"
+run = "docker network inspect floci-net >/dev/null 2>&1 || docker network create floci-net"
+
+[tasks.up]
+description = "Start the emulator and the web console"
+depends = ["net"]
+dir = "{{config_root}}"
+run = '''
+set -e
+
+if [ ! -f floci-ui/docker-compose.override.yml ]; then
+  echo "floci-ui is missing or not configured. Run: mise run install" >&2
+  exit 1
+fi
+
+docker compose -f floci-lab/docker-compose.yml up -d
+docker compose -f floci-ui/docker-compose.yml up -d --no-deps floci-api floci-ui
+
+echo ""
+echo "  Console   http://localhost:4500"
+echo "  Emulator  http://localhost:4566"
+'''
+
+[tasks.down]
+description = "Stop both stacks. Keeps data and images."
+dir = "{{config_root}}"
+run = [
+  "docker compose -f floci-ui/docker-compose.yml down --remove-orphans",
+  "docker compose -f floci-lab/docker-compose.yml down",
+]
+
+[tasks.restart]
+description = "Stop and start both stacks"
+depends = ["down"]
+run = "mise run up"
+
+
+# ─── Inspection ───────────────────────────────────────────────────────────────
+
+[tasks.status]
+description = "Show containers on the lab network"
+run = "docker ps --filter network=floci-net --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+
+[tasks.health]
+description = "Check that the emulator and the console API answer"
+dir = "{{config_root}}"
+run = '''
+set -e
+curl -fsS http://localhost:4566/_floci/health >/dev/null && echo "OK   emulator      :4566"
+curl -fsS http://localhost:4501/api/clouds/aws/status >/dev/null && echo "OK   console API   :4501"
+docker compose -f floci-ui/docker-compose.yml exec -T floci-api \
+  curl -fsS http://floci:4566/_floci/health >/dev/null && echo "OK   console → emulator"
+'''
+
+[tasks.logs]
+description = "Follow the emulator logs"
+dir = "{{config_root}}"
+run = "docker compose -f floci-lab/docker-compose.yml logs -f"
+
+[tasks.logs-ui]
+description = "Follow the console logs"
+dir = "{{config_root}}"
+run = "docker compose -f floci-ui/docker-compose.yml logs -f floci-api floci-ui"
+
+
+# ─── Teardown ─────────────────────────────────────────────────────────────────
+
+[tasks.reset]
+description = "Stop everything and delete emulator data. Keeps images."
+depends = ["down"]
+dir = "{{config_root}}"
+run = '''
+rm -rf floci-lab/data
+mkdir -p floci-lab/data
+echo "Emulator data deleted. OpenTofu state kept — run 'tofu destroy' first if it matters."
+'''
+
+[tasks.uninstall]
+description = "Remove containers, images, network, data, and the upstream clone"
+dir = "{{config_root}}"
+run = '''
+printf 'This deletes all Floci containers, images, the floci-net network,\n'
+printf 'floci-lab/data, and the floci-ui clone.\n'
+printf 'Type "yes" to continue: '
+read -r reply
+[ "$reply" = "yes" ] || { echo "Cancelled."; exit 1; }
+
+docker compose -f floci-ui/docker-compose.yml down --rmi all -v --remove-orphans || true
+docker compose -f floci-lab/docker-compose.yml down --rmi all -v --remove-orphans || true
+
+# Containers Floci spawned itself (Lambda, RDS, ECS) are in neither compose file
+docker ps -aq --filter network=floci-net | xargs -r docker rm -f
+docker network rm floci-net 2>/dev/null || true
+
+rm -rf floci-lab/data floci-ui
+echo ""
+echo "Uninstall complete. Your .tf files, mise.toml, and tofu state were kept."
+echo "Stale state? Run: rm -f floci-lab/terraform.tfstate*"
+'''
+

@@ -1,0 +1,20 @@
+
+services:
+  floci:
+    image: floci/floci:${FLOCI_IMAGE_TAG:-1.5.11}
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      FLOCI_DEFAULT_REGION: us-east-1
+      FLOCI_STORAGE_MODE: wal
+    networks:
+      floci-net:
+        aliases:
+          - localhost.floci.io
+networks:
+  floci-net:
+    name: floci-net
+    external: true
