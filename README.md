@@ -488,11 +488,18 @@ The console API cannot reach the emulator. Check each hop:
 
 ```bash
 curl http://localhost:4566/_floci/health
-docker compose -f floci-ui/docker-compose.yml exec floci-api curl -s http://floci:4566/_floci/health
+mise run health
 curl http://localhost:4501/api/clouds/aws/status
 ```
 
-If the second command fails, the containers are not on the same network:
+The `floci-api` image has no `curl`. To probe the middle hop by hand, use its
+bundled node runtime:
+
+```bash
+docker exec floci-ui-floci-api-1 node -e 'fetch("http://floci:4566/_floci/health").then(r=>console.log(r.status))'
+```
+
+If that hop fails, the containers are not on the same network:
 
 ```bash
 docker network inspect floci-net --format '{{range .Containers}}{{.Name}} {{end}}'
@@ -502,20 +509,34 @@ Both the emulator and `floci-api` must be listed. If not, confirm the override
 merged:
 
 ```bash
-cd floci-ui && docker compose config | grep -A4 '^networks:'
+docker compose -f floci-ui/docker-compose.yml -f floci-ui/docker-compose.override.yml config | grep -A4 '^networks:'
 ```
 
-`name: floci-net` and `external: true` must appear.
+`name: floci-net` and `external: true` must appear. If you see
+`name: floci_default` instead, the override was not merged — see the next
+section.
 
 ### A compose override seems ignored
 
-Three usual causes. Check in this order.
+Four usual causes. Check in this order.
 
-1. The file is not next to the base `docker-compose.yml`.
-2. The service or network key does not match the base file. Confirm the real
+1. The command used an explicit `-f`. Compose auto-loads
+   `docker-compose.override.yml` **only** when it discovers the compose file by
+   convention. `docker compose -f floci-ui/docker-compose.yml up` silently
+   ignores the override. Name both files:
+
+   ```bash
+   docker compose -f floci-ui/docker-compose.yml -f floci-ui/docker-compose.override.yml up -d
+   ```
+
+   Every task in `mise.toml` names both files. This is the cause of a console
+   that shows `Runtime unavailable` right after a clean install.
+
+2. The file is not next to the base `docker-compose.yml`.
+3. The service or network key does not match the base file. Confirm the real
    names with `docker compose config --services` and read the merged output of
    `docker compose config`.
-3. The container was restarted, not recreated. Environment changes need
+4. The container was restarted, not recreated. Environment changes need
    `--force-recreate`.
 
 ### `host.docker.internal` does not resolve

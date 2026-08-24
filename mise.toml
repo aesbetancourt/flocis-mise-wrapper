@@ -41,7 +41,7 @@ mkdir -p floci-lab/data
 
 # 4. Images and OpenTofu
 docker compose -f floci-lab/docker-compose.yml pull
-docker compose -f floci-ui/docker-compose.yml pull floci-api floci-ui
+docker compose -f floci-ui/docker-compose.yml -f floci-ui/docker-compose.override.yml pull floci-api floci-ui
 (cd floci-lab && tofu init -upgrade)
 
 echo ""
@@ -65,7 +65,7 @@ if [ ! -f floci-ui/docker-compose.override.yml ]; then
 fi
 
 docker compose -f floci-lab/docker-compose.yml up -d
-docker compose -f floci-ui/docker-compose.yml up -d --no-deps floci-api floci-ui
+docker compose -f floci-ui/docker-compose.yml -f floci-ui/docker-compose.override.yml up -d --no-deps floci-api floci-ui
 
 echo ""
 echo "  Console   http://localhost:4500"
@@ -76,8 +76,8 @@ echo "  Emulator  http://localhost:4566"
 description = "Stop both stacks. Keeps data and images."
 dir = "{{config_root}}"
 run = [
-  "docker compose -f floci-ui/docker-compose.yml down --remove-orphans",
-  "docker compose -f floci-lab/docker-compose.yml down",
+  "docker compose -f floci-ui/docker-compose.yml -f floci-ui/docker-compose.override.yml --project-directory floci-ui down --remove-orphans",
+  "docker compose -f floci-lab/docker-compose.yml --project-directory floci-lab down",
 ]
 
 [tasks.restart]
@@ -99,8 +99,10 @@ run = '''
 set -e
 curl -fsS http://localhost:4566/_floci/health >/dev/null && echo "OK   emulator      :4566"
 curl -fsS http://localhost:4501/api/clouds/aws/status >/dev/null && echo "OK   console API   :4501"
-docker compose -f floci-ui/docker-compose.yml exec -T floci-api \
-  curl -fsS http://floci:4566/_floci/health >/dev/null && echo "OK   console → emulator"
+# The floci-api image has no curl. Use the bundled node runtime instead.
+docker compose -f floci-ui/docker-compose.yml -f floci-ui/docker-compose.override.yml exec -T floci-api \
+  node -e 'fetch("http://floci:4566/_floci/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))' \
+  && echo "OK   console → emulator"
 '''
 
 [tasks.logs]
@@ -111,7 +113,7 @@ run = "docker compose -f floci-lab/docker-compose.yml logs -f"
 [tasks.logs-ui]
 description = "Follow the console logs"
 dir = "{{config_root}}"
-run = "docker compose -f floci-ui/docker-compose.yml logs -f floci-api floci-ui"
+run = "docker compose -f floci-ui/docker-compose.yml -f floci-ui/docker-compose.override.yml logs -f floci-api floci-ui"
 
 
 # ─── Teardown ─────────────────────────────────────────────────────────────────
@@ -136,7 +138,7 @@ printf 'Type "yes" to continue: '
 read -r reply
 [ "$reply" = "yes" ] || { echo "Cancelled."; exit 1; }
 
-docker compose -f floci-ui/docker-compose.yml down --rmi all -v --remove-orphans || true
+docker compose -f floci-ui/docker-compose.yml -f floci-ui/docker-compose.override.yml down --rmi all -v --remove-orphans || true
 docker compose -f floci-lab/docker-compose.yml down --rmi all -v --remove-orphans || true
 
 # Containers Floci spawned itself (Lambda, RDS, ECS) are in neither compose file
