@@ -186,6 +186,16 @@ the containers start. This is the failure that otherwise recurs after a
 This is the loop the lab exists for. Write declarative infrastructure, apply it,
 check it, destroy it, repeat. Each cycle takes seconds and costs nothing.
 
+`floci-lab/provider.tf` is ready. It points the AWS provider at the emulator and
+keeps state in a local file. `mise run install` runs `tofu init` for it.
+
+> **Note:** The provider lists an endpoint for each service it can use. Before
+> you use a service that is not in the `endpoints` block, add a line for it.
+> Without the line, the provider calls real AWS and fails.
+
+Commit `floci-lab/.terraform.lock.hcl`. It pins the provider version. To update
+the provider, run `tofu init -upgrade` in `floci-lab/`.
+
 ### 1. Write the resources
 
 `floci-lab/main.tf`:
