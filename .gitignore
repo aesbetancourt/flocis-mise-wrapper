@@ -15,3 +15,13 @@ crash.log
 # Local overrides
 .env.local
 .DS_Store
+
+# Exercise lock files. The root floci-lab/.terraform.lock.hcl pins the providers.
+floci-lab/exercises/**/.terraform.lock.hcl
+
+# Lambda zip files that archive_file writes during an exercise
+floci-lab/exercises/**/build/
+__pycache__/
+
+# Python formatter cache
+.ruff_cache/

@@ -1,0 +1,98 @@
+{
+  "Comment": "Exercise 04. Inspect an uploaded object, classify it by size, and store the result.",
+  "StartAt": "ReadEvent",
+  "States": {
+    "ReadEvent": {
+      "Type": "Pass",
+      "Comment": "The pipe sends one SQS message. Its body is the EventBridge event as a JSON string.",
+      "Parameters": {
+        "event.$": "States.StringToJson($.body)"
+      },
+      "Next": "InspectObject"
+    },
+    "InspectObject": {
+      "Type": "Task",
+      "Comment": "Call the Lambda function. OutputPath keeps only the value that the function returns.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${function_arn}",
+        "Payload": {
+          "bucket.$": "$.event.detail.bucket.name",
+          "key.$": "$.event.detail.object.key"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "InspectFailed"
+        }
+      ],
+      "Next": "ClassifySize"
+    },
+    "ClassifySize": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.size",
+          "NumericGreaterThan": 1024,
+          "Next": "MarkLarge"
+        }
+      ],
+      "Default": "MarkSmall"
+    },
+    "MarkLarge": {
+      "Type": "Pass",
+      "Result": "large",
+      "ResultPath": "$.category",
+      "Next": "SaveResult"
+    },
+    "MarkSmall": {
+      "Type": "Pass",
+      "Result": "small",
+      "ResultPath": "$.category",
+      "Next": "SaveResult"
+    },
+    "SaveResult": {
+      "Type": "Task",
+      "Comment": "Write the item with the DynamoDB service integration. No Lambda code is necessary.",
+      "Resource": "arn:aws:states:::dynamodb:putItem",
+      "Parameters": {
+        "TableName": "${table_name}",
+        "Item": {
+          "object_key": { "S.$": "$.key" },
+          "bucket": { "S.$": "$.bucket" },
+          "size": { "N.$": "States.Format('{}', $.size)" },
+          "content_type": { "S.$": "$.content_type" },
+          "first_line": { "S.$": "$.first_line" },
+          "category": { "S.$": "$.category" },
+          "execution_name": { "S.$": "$$.Execution.Name" }
+        }
+      },
+      "ResultPath": null,
+      "Next": "Done"
+    },
+    "InspectFailed": {
+      "Type": "Fail",
+      "Error": "InspectFailed",
+      "Cause": "The Lambda function could not inspect the object. Read $.error in the execution history."
+    },
+    "Done": {
+      "Type": "Succeed"
+    }
+  }
+}

@@ -149,6 +149,37 @@ mkdir -p floci-lab/data
 echo "Emulator data deleted. OpenTofu state kept — run 'tofu destroy' first if it matters."
 '''
 
+[tasks.flush]
+description = "Delete emulator data, backups, and Floci-made containers and volumes. Asks first."
+dir = "{{config_root}}"
+# mise does not connect stdin to a task unless it is interactive.
+interactive = true
+run = '''
+printf 'This stops the lab and deletes:\n'
+printf '  - all emulator data in floci-lab/data\n'
+printf '  - all backups in floci-lab/backups\n'
+printf '  - the containers and volumes Floci made (Lambda, RDS, ECS, ...)\n'
+printf 'Images, version pins, and your .tf files are kept.\n'
+printf 'Type "yes" to continue: '
+read -r reply
+[ "$reply" = "yes" ] || { echo "Cancelled. Nothing changed."; exit 1; }
+
+set -e
+docker compose -f floci-lab/docker-compose.yml down --remove-orphans
+
+# Floci labels every container and volume it makes. Other containers on floci-net are not touched.
+docker ps -aq --filter label=floci_emulator=floci-aws | xargs -r docker rm -f
+docker volume ls -q --filter label=floci_emulator=floci-aws | xargs -r docker volume rm
+
+rm -rf floci-lab/data floci-lab/backups floci-lab/.data-restore
+mkdir -p floci-lab/data
+
+echo ""
+echo "Flush complete. Run: mise run up"
+echo "OpenTofu state files still list the deleted resources. Delete them before the next apply:"
+echo "  find floci-lab -name 'terraform.tfstate*' -not -path '*/.terraform/*'"
+'''
+
 [tasks.uninstall]
 description = "Remove containers, images, network, and data. Keeps backups."
 dir = "{{config_root}}"
@@ -163,8 +194,9 @@ read -r reply
 
 docker compose -f floci-lab/docker-compose.yml down --rmi all -v --remove-orphans || true
 
-# Containers Floci spawned itself (Lambda, RDS, ECS) are not in the compose file
-docker ps -aq --filter network=floci-net | xargs -r docker rm -f
+# Floci labels every container and volume it makes (Lambda, RDS, ECS). Other containers on floci-net are not touched.
+docker ps -aq --filter label=floci_emulator=floci-aws | xargs -r docker rm -f
+docker volume ls -q --filter label=floci_emulator=floci-aws | xargs -r docker volume rm
 docker network rm floci-net 2>/dev/null || true
 
 rm -rf floci-lab/data

@@ -81,6 +81,7 @@ Desktop also work. Check your active runtime with `docker context ls`.
 floci/
 ├── mise.toml                     # All tasks and lab environment variables
 ├── versions.env                  # Pinned Floci image tags
+├── USAGE.md                      # Usage manual: learn, practice, test
 ├── scripts/
 │   └── versions.sh               # Logic for outdated, upgrade, backup, rollback
 └── floci-lab/                    # Yours — version-control this
@@ -88,8 +89,10 @@ floci/
     ├── aws/
     │   ├── config                # Lab-only AWS CLI config
     │   └── credentials           # Lab-only dummy credentials
-    ├── provider.tf               # OpenTofu provider, pointed at localhost:4566
+    ├── provider.tf               # OpenTofu providers, pointed at localhost:4566
     ├── main.tf                   # Your infrastructure
+    ├── exercises/                # Six exercises and drills, with checkers and solutions
+    ├── scratch/                  # Throwaway files (gitignored)
     ├── data/                     # Emulator state (gitignored)
     └── backups/                  # Upgrade backups (gitignored)
 ```
@@ -175,6 +178,7 @@ The `region` row must show a path inside `floci-lab/`. The account must be
 | `mise run backup` | Saves emulator data and pins to `floci-lab/backups`. |
 | `mise run rollback` | Restores data and pins from the newest backup. |
 | `mise run reset` | Stops everything and deletes emulator data. Keeps images. |
+| `mise run flush` | Stops the lab. Deletes emulator data, backups, and the containers and volumes Floci made. Asks for confirmation. |
 | `mise run uninstall` | Removes containers, images, the network, and data. Asks for confirmation. |
 | `mise tasks` | Lists all tasks. |
 
@@ -477,6 +481,10 @@ the rollback.
   the lab again.
 - The lab keeps the five newest backups. It deletes older ones.
 - `mise run uninstall` and `mise run reset` do not delete backups.
+  `mise run flush` deletes them.
+- A backup contains `floci-lab/data` only. Container services such as RDS keep
+  their data in Docker volumes that Floci makes. Backups do not include those
+  volumes.
 
 ### Update the tools
 
@@ -548,8 +556,12 @@ mise run uninstall
 ```
 
 It asks for confirmation, then removes the emulator and console containers,
-their images and volumes, any containers Floci spawned on `floci-net`, the
-network itself, and `floci-lab/data`.
+their images and volumes, the containers and volumes Floci made, the
+`floci-net` network, and `floci-lab/data`.
+
+Floci labels each container and volume it makes with
+`floci_emulator=floci-aws`. The task removes only those. Your own containers on
+`floci-net` stay.
 
 It **keeps** your `.tf` files, `mise.toml`, `versions.env`, the backups in
 `floci-lab/backups`, and `terraform.tfstate`.
@@ -563,6 +575,8 @@ It **keeps** your `.tf` files, `mise.toml`, `versions.env`, the backups in
 > ```
 
 For data only, keeping images and the network, use `mise run reset` instead.
+To also delete the backups and the containers and volumes Floci made, use
+`mise run flush`.
 
 The task never runs `docker system prune`. That one-liner is scoped to your
 whole machine and would remove unrelated containers, images, and networks.

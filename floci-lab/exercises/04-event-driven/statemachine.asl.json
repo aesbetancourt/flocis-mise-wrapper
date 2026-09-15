@@ -1,0 +1,32 @@
+{
+  "Comment": "Exercise 04. Inspect an uploaded object, classify it by size, and store the result.",
+  "StartAt": "ReadEvent",
+  "States": {
+    "ReadEvent": {
+      "Type": "Pass",
+      "Comment": "Complete. The pipe sends one SQS message. Its body is the EventBridge event as a JSON string.",
+      "Parameters": {
+        "event.$": "States.StringToJson($.body)"
+      },
+      "Next": "InspectObject"
+    },
+    "InspectObject": {
+      "Type": "Pass",
+      "Comment": "TODO 1 and TODO 2. Read the README, Part B.",
+      "Next": "ClassifySize"
+    },
+    "ClassifySize": {
+      "Type": "Pass",
+      "Comment": "TODO 3. Read the README, Part B.",
+      "Next": "SaveResult"
+    },
+    "SaveResult": {
+      "Type": "Pass",
+      "Comment": "TODO 4. Read the README, Part B.",
+      "Next": "Done"
+    },
+    "Done": {
+      "Type": "Succeed"
+    }
+  }
+}

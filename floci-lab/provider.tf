@@ -12,6 +12,11 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    # Zips Lambda code with the archive_file data source. It makes no network calls.
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
+    }
   }
 
   # Keep state on disk. No lab state can reach a real S3 backend.
