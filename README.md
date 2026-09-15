@@ -8,7 +8,9 @@ on your machine, with no AWS account and no cost.
 - **Web console and its API** — `http://localhost:4500`
 
 This README covers install, configuration, and maintenance. To learn, practice,
-and test with the lab, read the [usage manual](USAGE.md).
+and test with the lab, read the [usage manual](USAGE.md). For guided exercises
+with checkers and solutions, read the
+[exercises guide](floci-lab/exercises/README.md).
 
 ---
 

@@ -112,6 +112,7 @@ resources.
 | Practice infrastructure as code | OpenTofu | [5](#5-work-with-opentofu) |
 | Practice infrastructure as code in a programming language | AWS CDK | [6](#6-work-with-aws-cdk) |
 | Test application code | An AWS SDK in your app | [7](#7-connect-your-own-apps-with-an-aws-sdk) |
+| Follow guided exercises with a checker | [`floci-lab/exercises/`](floci-lab/exercises/README.md) | [9](#9-learning-path) |
 | See the result | Console, `localhost:4500` | — |
 
 Use the console to inspect, not to create. Create resources with the CLI,
@@ -684,7 +685,8 @@ an app with an SDK.
 
 Each level is a ready exercise in
 [`floci-lab/exercises/`](floci-lab/exercises/), with starter code, a checker,
-and a solution.
+and a solution. The [exercises guide](floci-lab/exercises/README.md) explains
+how they are organized and how to use them.
 
 | Level | Build | Learn |
 | --- | --- | --- |
