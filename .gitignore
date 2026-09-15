@@ -3,11 +3,14 @@ floci-lab/data/
 floci-lab/backups/
 floci-lab/.data-restore/
 
-# OpenTofu
-floci-lab/.terraform/
-floci-lab/*.tfstate
-floci-lab/*.tfstate.*
-floci-lab/crash.log
+# Throwaway files from CLI experiments. It is inside the lab, so the lab environment applies.
+floci-lab/scratch/
+
+# OpenTofu, at any depth (floci-lab/ and exercise folders). Keep .terraform.lock.hcl tracked.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
 
 # Local overrides
 .env.local

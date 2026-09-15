@@ -7,6 +7,9 @@ on your machine, with no AWS account and no cost.
 - **Emulator** — `http://localhost:4566`
 - **Web console and its API** — `http://localhost:4500`
 
+This README covers install, configuration, and maintenance. To learn, practice,
+and test with the lab, read the [usage manual](USAGE.md).
+
 ---
 
 ## Table of contents
@@ -314,9 +317,12 @@ aws dynamodb scan --table-name lab-items
 Floci reads a 12-digit access key as the account ID. Resources in one account
 are invisible to another.
 
+Set the secret key too. Inside the lab, mise sets it to an empty value, and the
+CLI rejects a key without a secret.
+
 ```bash
-AWS_ACCESS_KEY_ID=111111111111 aws sqs create-queue --queue-name orders
-AWS_ACCESS_KEY_ID=222222222222 aws sqs list-queues   # empty
+AWS_ACCESS_KEY_ID=111111111111 AWS_SECRET_ACCESS_KEY=test aws sqs create-queue --queue-name orders
+AWS_ACCESS_KEY_ID=222222222222 AWS_SECRET_ACCESS_KEY=test aws sqs list-queues   # empty
 ```
 
 Any other key format falls back to `FLOCI_DEFAULT_ACCOUNT_ID`, which defaults to
