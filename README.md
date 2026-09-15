@@ -5,8 +5,7 @@ A local AWS environment for learning and simulating infrastructure. It runs the
 on your machine, with no AWS account and no cost.
 
 - **Emulator** — `http://localhost:4566`
-- **Web console** — `http://localhost:4500`
-- **Console API** — `http://localhost:4501`
+- **Web console and its API** — `http://localhost:4500`
 
 ---
 
@@ -22,6 +21,7 @@ on your machine, with no AWS account and no cost.
 - [Workflow: manual CLI](#workflow-manual-cli)
 - [Web console](#web-console)
 - [Configuration](#configuration)
+- [Updates](#updates)
 - [Isolation from real AWS](#isolation-from-real-aws)
 - [Uninstall](#uninstall)
 - [Troubleshooting](#troubleshooting)
@@ -36,25 +36,25 @@ Floci is a local AWS emulator. It speaks the real AWS wire protocol on port
 4566, so the AWS CLI, the AWS SDKs, OpenTofu, and Terraform work against it with
 no code changes — only an endpoint override.
 
-Two tiers run side by side:
+Two containers run side by side, from one compose file:
 
-| Component | Role | Repository |
+| Service | Role | Image |
 | --- | --- | --- |
-| `floci-lab/` | Your emulator config and your OpenTofu code | This lab (yours) |
-| `floci-ui/` | AWS-Console-style web UI, an upstream clone | `floci-io/floci-ui` |
+| `floci` | The AWS emulator | `floci/floci` |
+| `floci-ui` | AWS-Console-style web UI and its API | `floci/floci-ui` |
 
 The UI is a **companion, not part of the emulator**. It is a separate process
 that calls the same HTTP API your CLI calls. Delete it and the emulator is
 unaffected.
 
 ```
-Browser :4500 ──► floci-ui ──► floci-api :4501 ──► floci :4566
-                                                     ▲
-AWS CLI / OpenTofu ──────────────────────────────────┘
+Browser :4500 ──► floci-ui ──► floci :4566
+                                  ▲
+AWS CLI / OpenTofu ───────────────┘
 ```
 
-Both stacks join one shared Docker network, `floci-net`. This is what lets the
-console reach the emulator by name.
+Both containers join one shared Docker network, `floci-net`. This is what lets
+the console reach the emulator by name.
 
 ---
 
@@ -77,16 +77,18 @@ Desktop also work. Check your active runtime with `docker context ls`.
 ```
 floci/
 ├── mise.toml                     # All tasks and lab environment variables
-├── floci-lab/                    # Yours — version-control this
-│   ├── docker-compose.yml        # The emulator
-│   ├── aws/
-│   │   ├── config                # Lab-only AWS CLI config
-│   │   └── credentials           # Lab-only dummy credentials
-│   ├── provider.tf               # OpenTofu provider, pointed at localhost:4566
-│   ├── main.tf                   # Your infrastructure
-│   └── data/                     # Emulator state (gitignored)
-└── floci-ui/                     # Upstream clone — do not edit
-    └── docker-compose.override.yml   # Attaches the UI to floci-net
+├── versions.env                  # Pinned Floci image tags
+├── scripts/
+│   └── versions.sh               # Logic for outdated, upgrade, backup, rollback
+└── floci-lab/                    # Yours — version-control this
+    ├── docker-compose.yml        # The emulator and the console
+    ├── aws/
+    │   ├── config                # Lab-only AWS CLI config
+    │   └── credentials           # Lab-only dummy credentials
+    ├── provider.tf               # OpenTofu provider, pointed at localhost:4566
+    ├── main.tf                   # Your infrastructure
+    ├── data/                     # Emulator state (gitignored)
+    └── backups/                  # Upgrade backups (gitignored)
 ```
 
 ---
@@ -120,7 +122,7 @@ Do this once, or after `mise run uninstall`.
    mise run up
    ```
 
-5. Make sure both tiers answer:
+5. Make sure both containers answer:
 
    ```bash
    mise run health
@@ -145,9 +147,11 @@ Make sure the AWS CLI points at the lab, not at real AWS:
 
 ```bash
 aws configure list
+aws sts get-caller-identity --query Account --output text
 ```
 
-The `config-file` row must show a path inside `floci-lab/`.
+The `region` row must show a path inside `floci-lab/`. The account must be
+`000000000000`.
 
 ---
 
@@ -157,10 +161,16 @@ The `config-file` row must show a path inside `floci-lab/`.
 | --- | --- |
 | `mise run install` | Creates the network, pulls images, runs `tofu init`. Run once. |
 | `mise run up` | Starts the emulator and the console. Creates the network if it is missing. |
-| `mise run down` | Stops both stacks. Keeps data and images. |
-| `mise run status` | Lists containers on `floci-net` with their ports. |
-| `mise run health` | Checks that the emulator and the console API answer. |
+| `mise run down` | Stops the emulator and the console. Keeps data and images. |
+| `mise run restart` | Runs `down`, then `up`. |
+| `mise run status` | Lists containers on `floci-net` with their images and ports. |
+| `mise run health` | Checks the emulator, the console, and the link between them. |
 | `mise run logs` | Follows the emulator logs. Press `Ctrl+C` to stop. |
+| `mise run logs-ui` | Follows the console logs. |
+| `mise run outdated` | Compares pinned versions with the latest releases. Changes nothing. |
+| `mise run upgrade` | Upgrades the Floci pins. See [Updates](#updates). |
+| `mise run backup` | Saves emulator data and pins to `floci-lab/backups`. |
+| `mise run rollback` | Restores data and pins from the newest backup. |
 | `mise run reset` | Stops everything and deletes emulator data. Keeps images. |
 | `mise run uninstall` | Removes containers, images, the network, and data. Asks for confirmation. |
 | `mise tasks` | Lists all tasks. |
@@ -322,12 +332,7 @@ Use the console as an **inspector, not a control panel**. Clicking "create
 bucket" builds the habit this lab exists to replace. Opening the console after
 `tofu apply` to see what your HCL produced is the useful part.
 
-To update the console:
-
-```bash
-cd floci-ui && git pull
-mise run down && mise run up
-```
+To update the console, see [Updates](#updates).
 
 ---
 
@@ -339,6 +344,7 @@ mise run down && mise run up
 | --- | --- | --- |
 | `FLOCI_DEFAULT_REGION` | `us-east-1` | Matches the OpenTofu provider. |
 | `FLOCI_STORAGE_MODE` | `wal` | Durable. State survives a hard stop. |
+| `FLOCI_SERVICES_UI_ENABLED` | `false` | Emulator 1.5.26 and later start their own console on port 4500. The lab runs its own `floci-ui` service instead. |
 
 Storage modes, fastest to safest:
 
@@ -349,8 +355,9 @@ Storage modes, fastest to safest:
   disagrees with your OpenTofu state file costs an hour of confusion and the
   write speed does not matter at this scale.
 
-The image tag is pinned (`1.5.11`), not `latest`. An image that changed under
-you is a bad first thing to debug.
+Both image tags are pinned in `versions.env`, not `latest`. An image that
+changed under you is a bad first thing to debug. Compose stops with an error if
+a pin is missing, so run compose through mise.
 
 The Docker socket is mounted. Floci needs it to spawn real containers for
 Lambda, RDS, ElastiCache, ECS, and EKS.
@@ -358,25 +365,23 @@ Lambda, RDS, ElastiCache, ECS, and EKS.
 > **Caution:** The socket mount gives the container control of your Docker
 > daemon. Use this on a development machine only.
 
+### Console — `floci-lab/docker-compose.yml`
+
+| Variable | Value here | Why |
+| --- | --- | --- |
+| `FLOCI_ENDPOINT` | `http://floci:4566` | The emulator, by its service name on `floci-net`. |
+| `AWS_REGION` | `us-east-1` | Matches the emulator. |
+
+The image serves the web page and the API from one process on port 4500.
+
 ### Networking
 
-Both compose files attach to an external network named `floci-net`. The lab
-service carries the alias `localhost.floci.io`, which the console needs for
+Both services attach to an external network named `floci-net`. Floci also puts
+the containers it spawns for Lambda, RDS, and ECS on that network.
+
+The emulator carries the alias `localhost.floci.io`, which the console needs for
 virtual-host-style S3 addresses. Without the alias, bucket browsing fails while
 everything else looks connected.
-
-The UI override retargets the base file's `floci_default` network key at
-`floci-net`:
-
-```yaml
-networks:
-  floci_default:
-    name: floci-net
-    external: true
-```
-
-The UI stack is started with `--no-deps floci-api floci-ui` so its own bundled
-emulator never starts and never collides on port 4566.
 
 ### mise `[tools]`
 
@@ -386,26 +391,124 @@ versions rather than `latest` if you want the lab reproducible next year.
 
 ---
 
+## Updates
+
+| Pin | File | Update with |
+| --- | --- | --- |
+| Emulator image (`FLOCI_IMAGE_TAG`) | `versions.env` | `mise run upgrade` |
+| Console image (`FLOCI_UI_TAG`) | `versions.env` | `mise run upgrade` |
+| `opentofu`, `awscli` | `mise.toml` | `mise upgrade --bump` |
+
+Floci ships a release on the first and third Tuesday of each month. Minor
+releases can change emulator behavior, so read the changelog for every upgrade.
+
+### Check for new versions
+
+```bash
+mise run outdated
+```
+
+The task lists each pin, the latest release, and a changelog link. `MAJOR`
+marks a new major version. The task changes nothing.
+
+### Upgrade Floci
+
+> **Warning:** An emulator upgrade can convert the data in `floci-lab/data`.
+> There is no way to go back to the old format except the backup that the task
+> makes.
+
+1. Run the upgrade:
+
+   ```bash
+   mise run upgrade                    # Both images to the latest release
+   mise run upgrade --floci 2.0.1      # Only the emulator, to this version
+   mise run upgrade --ui 0.5.0         # Only the console, to this version
+   ```
+
+2. Read the changelog links in the plan.
+3. Type `yes` to continue.
+4. Commit `versions.env` when the task reports `Upgrade complete`.
+
+The task does these steps in order:
+
+1. Pulls the new images. The lab keeps running, so a failed pull changes
+   nothing.
+2. Stops the lab and saves `floci-lab/data` and `versions.env` to
+   `floci-lab/backups/`.
+3. Writes the new pins and starts the lab.
+4. Runs `health` for up to 90 seconds and checks the emulator version.
+5. If the check fails, prints the emulator logs, restores the backup, and starts
+   the old versions again.
+
+### Roll back
+
+Use this when an upgrade passed the health check but breaks your work, for
+example a stricter IAM or API Gateway behavior.
+
+> **Caution:** A rollback deletes all emulator data written after the backup.
+
+```bash
+mise run rollback
+```
+
+The task restores the newest backup: data and pins. Commit `versions.env` after
+the rollback.
+
+### Backups
+
+- `mise run upgrade` makes a backup automatically.
+- `mise run backup` makes one on demand. It stops the lab, saves, and starts
+  the lab again.
+- The lab keeps the five newest backups. It deletes older ones.
+- `mise run uninstall` and `mise run reset` do not delete backups.
+
+### Update the tools
+
+```bash
+mise upgrade --bump opentofu
+cd floci-lab && tofu init -upgrade
+```
+
+`--bump` writes the new version into `mise.toml`. Commit it.
+
+---
+
 ## Isolation from real AWS
 
-The lab never reads or writes `~/.aws`. `mise.toml` sets:
+Inside the lab folder, the AWS CLI does not read `~/.aws`. `mise.toml` sets:
 
 ```
-AWS_CONFIG_FILE            = floci-lab/aws/config
+AWS_CONFIG_FILE             = floci-lab/aws/config
 AWS_SHARED_CREDENTIALS_FILE = floci-lab/aws/credentials
-AWS_PROFILE                 = default
+AWS_PROFILE                 = floci
 ```
+
+The `floci` profile sets `endpoint_url = http://localhost:4566`, so every CLI
+call goes to the emulator.
+
+The AWS CLI reads some environment variables before these files. Examples are
+exported access keys, session tokens, web identity roles, and endpoint
+overrides. `mise.toml` sets each of them to an empty value inside the lab. The
+CLI treats an empty value as not set. A real-account session in your shell
+cannot reach into the lab, and mise restores it when you leave the folder.
+
+> **Note:** Do not replace the empty values with `false`. In mise, `false` does
+> not remove a variable that the shell already exported.
 
 Confirm the isolation:
 
-1. Inside the lab folder, run `aws configure list`. The file paths must point
-   into `floci-lab/`.
+1. Inside the lab folder, run `aws sts get-caller-identity`. The account must be
+   `000000000000`.
 2. Open a shell outside the lab folder. Run `aws sts get-caller-identity`. Your
    real identity must come back.
 
-This is stronger than a named profile. A profile fails open — forget to set
-`AWS_PROFILE` and commands silently hit real AWS. Here the real credentials file
-is not on the search path at all.
+> **Warning:** The isolation works only when mise loads the lab environment. A
+> script, IDE task, or cron job that runs without mise reads `~/.aws` and uses
+> your real account.
+
+Run lab commands through `mise run` or `mise exec`. In scripts, also pass
+`--profile floci`. Without mise, that profile does not exist, so the command
+fails instead of reaching real AWS.
 
 The OpenTofu provider hardcodes its endpoints and credentials, so it is isolated
 regardless of your shell. Keep it that way. Do not switch it to a named profile.
@@ -428,12 +531,12 @@ terraform {
 mise run uninstall
 ```
 
-It asks for confirmation, then removes the containers of both stacks, their
-images and volumes, any containers Floci spawned on `floci-net`, the network
-itself, and `floci-lab/data`.
+It asks for confirmation, then removes the emulator and console containers,
+their images and volumes, any containers Floci spawned on `floci-net`, the
+network itself, and `floci-lab/data`.
 
-It **keeps** your `.tf` files, `mise.toml`, the `floci-ui` clone, and
-`terraform.tfstate`.
+It **keeps** your `.tf` files, `mise.toml`, `versions.env`, the backups in
+`floci-lab/backups`, and `terraform.tfstate`.
 
 > **Caution:** After uninstall, the state file describes resources that no
 > longer exist. The next `tofu apply` will fail against a fresh emulator. Delete
@@ -469,75 +572,58 @@ file containing only `{}` is valid.
 > plain base64 in `~/.docker/config.json`. That is acceptable for public images.
 > Install a real helper if you push to private registries.
 
-### `Bind for 0.0.0.0:4566 failed: port is already allocated`
+### `Bind for 0.0.0.0:4566 failed` or `0.0.0.0:4500 failed: port is already allocated`
 
-Two emulators want the same port. The UI stack ships its own Floci.
+Another container holds the port. Usual holders:
 
-Always start the UI with `--no-deps`, which `mise run up` does. If it still
-happens, find the holder:
+- A second emulator, for example LocalStack.
+- The console that emulator 1.5.26 and later start by themselves, named
+  `floci-ui`. It appears if `FLOCI_SERVICES_UI_ENABLED: "false"` is missing from
+  the compose file.
+
+Find the holder:
 
 ```bash
-docker ps --filter publish=4566
-lsof -i :4566
-docker compose -f floci-ui/docker-compose.yml down --remove-orphans
+docker ps --filter publish=4566 --filter publish=4500
+lsof -i :4566 -i :4500
 ```
 
 ### Console shows `Runtime unavailable`
 
-The console API cannot reach the emulator. Check each hop:
+The console cannot reach the emulator. Check each hop:
 
 ```bash
 curl http://localhost:4566/_floci/health
+curl http://localhost:4500/api/clouds/aws/status
 mise run health
-curl http://localhost:4501/api/clouds/aws/status
 ```
 
-The `floci-api` image has no `curl`. To probe the middle hop by hand, use its
-bundled node runtime:
-
-```bash
-docker exec floci-ui-floci-api-1 node -e 'fetch("http://floci:4566/_floci/health").then(r=>console.log(r.status))'
-```
-
-If that hop fails, the containers are not on the same network:
+The status response must contain `"runtime":"reachable"`. If it does not, make
+sure both containers are on the same network:
 
 ```bash
 docker network inspect floci-net --format '{{range .Containers}}{{.Name}} {{end}}'
 ```
 
-Both the emulator and `floci-api` must be listed. If not, confirm the override
-merged:
+Both `floci-lab-floci-1` and `floci-lab-floci-ui-1` must be listed.
+
+### `required variable FLOCI_IMAGE_TAG is missing a value`
+
+Compose ran without the lab environment. Run it through mise:
 
 ```bash
-docker compose -f floci-ui/docker-compose.yml -f floci-ui/docker-compose.override.yml config | grep -A4 '^networks:'
+mise exec -- docker compose -f floci-lab/docker-compose.yml ps
 ```
 
-`name: floci-net` and `external: true` must appear. If you see
-`name: floci_default` instead, the override was not merged — see the next
-section.
+### An upgrade rolled back
 
-### A compose override seems ignored
+The task printed the last emulator log lines before it restored the backup. To
+try again with an older release, name the version:
 
-Four usual causes. Check in this order.
-
-1. The command used an explicit `-f`. Compose auto-loads
-   `docker-compose.override.yml` **only** when it discovers the compose file by
-   convention. `docker compose -f floci-ui/docker-compose.yml up` silently
-   ignores the override. Name both files:
-
-   ```bash
-   docker compose -f floci-ui/docker-compose.yml -f floci-ui/docker-compose.override.yml up -d
-   ```
-
-   Every task in `mise.toml` names both files. This is the cause of a console
-   that shows `Runtime unavailable` right after a clean install.
-
-2. The file is not next to the base `docker-compose.yml`.
-3. The service or network key does not match the base file. Confirm the real
-   names with `docker compose config --services` and read the merged output of
-   `docker compose config`.
-4. The container was restarted, not recreated. Environment changes need
-   `--force-recreate`.
+```bash
+mise run outdated
+mise run upgrade --floci <version>
+```
 
 ### `host.docker.internal` does not resolve
 
@@ -550,7 +636,7 @@ it unnecessary. Do not reintroduce it.
 Each service is probed separately. Ask which one is failing:
 
 ```bash
-curl 'http://localhost:4501/api/clouds/aws/status?services=all'
+curl 'http://localhost:4500/api/clouds/aws/status?services=all'
 ```
 
 The `errorCode` distinguishes the cases. `operation_not_implemented` means the

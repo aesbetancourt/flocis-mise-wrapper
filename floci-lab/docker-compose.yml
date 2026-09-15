@@ -1,7 +1,8 @@
 
+# Image tags come from versions.env, which mise loads. `mise run upgrade` changes them.
 services:
   floci:
-    image: floci/floci:${FLOCI_IMAGE_TAG:-1.5.11}
+    image: floci/floci:${FLOCI_IMAGE_TAG:?Run through mise, which loads versions.env}
     ports:
       - "4566:4566"
     volumes:
@@ -10,10 +11,27 @@ services:
     environment:
       FLOCI_DEFAULT_REGION: us-east-1
       FLOCI_STORAGE_MODE: wal
+      # Emulator 1.5.26+ starts its own console on port 4500. The lab runs floci-ui below.
+      FLOCI_SERVICES_UI_ENABLED: "false"
     networks:
       floci-net:
         aliases:
           - localhost.floci.io
+
+  floci-ui:
+    image: floci/floci-ui:${FLOCI_UI_TAG:?Run through mise, which loads versions.env}
+    ports:
+      - "4500:4500"
+    environment:
+      FLOCI_ENDPOINT: http://floci:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    depends_on:
+      - floci
+    networks:
+      - floci-net
+
 networks:
   floci-net:
     name: floci-net

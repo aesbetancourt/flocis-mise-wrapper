@@ -1,8 +1,7 @@
-# Upstream clone — recreated by `mise run install`
-floci-ui/
-
-# Emulator state
+# Emulator state and upgrade backups
 floci-lab/data/
+floci-lab/backups/
+floci-lab/.data-restore/
 
 # OpenTofu
 floci-lab/.terraform/

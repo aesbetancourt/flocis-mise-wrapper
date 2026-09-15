@@ -1,0 +1,8 @@
+# Lab-only AWS CLI config. Inside the lab folder, mise points AWS_CONFIG_FILE here.
+# Do not add real accounts to this file.
+
+[profile floci]
+region = us-east-1
+output = json
+# Send every call to the local emulator, never to real AWS.
+endpoint_url = http://localhost:4566
